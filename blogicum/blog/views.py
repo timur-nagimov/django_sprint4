@@ -104,7 +104,7 @@ class PostDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         context['form'] = CreateCommentForm()
         context['comments'] = (
-            self.object.posts.select_related('author')
+            self.object.comments.select_related('author')
         )
         return context
 
