@@ -6,8 +6,8 @@ from django.utils import timezone
 
 def correct_datetime(value: datetime) -> None:
     # время с учетом часового пояса
-    now_aware = timezone.make_aware(datetime.now(),
-                                    timezone.get_default_timezone())
+    now_aware = timezone.now()
+
     if value < now_aware:
         raise ValidationError(
             'Дата и время публикации должны быть в будущем.'
