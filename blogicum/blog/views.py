@@ -1,10 +1,13 @@
 from typing import Any
+from django.db.models.base import Model as Model
+from django.db.models.query import QuerySet
 
 from django.http import Http404
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db.models import Q
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -42,18 +45,30 @@ class ProfileListView(PaginatorListMixin, ListView):
     model = Post
     template_name = 'blog/profile.html'
 
-    def get_user(self) -> User:
-        # Получаем username из URL или используем имя текущего пользователя
-        username = self.kwargs.get('username', self.request.user.username)
-        return get_object_or_404(User, username=username)
+    def _get_user(self):
+        if not hasattr(self, '_user'):
+            username = self.kwargs.get('username', self.request.user.username)
+            self._user = get_object_or_404(User, username=username)
+        return self._user
 
     def get_queryset(self):
-        user = self.get_user()
-        return Post.objects.filter(author=user)
+        url_user = self._get_user()
+        current_user = self.request.user
+        if url_user == current_user:
+            return Post.objects.filter(author=url_user)
+        else:
+            now = timezone.now()
+            return Post.objects.filter(
+                (Q(author=url_user)
+                 & Q(is_published=True)
+                 & Q(category__is_published=True)
+                 & Q(pub_date__lte=now)
+                 )
+            )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['profile'] = self.get_user()
+        context['profile'] = self._get_user()
         return context
 
 
@@ -61,18 +76,22 @@ class CategoryListView(PaginatorListMixin, ListView):
     model = Post
     template_name = 'blog/category.html'
 
+    def _get_category(self):
+        if not hasattr(self, '_category'):
+            category_slug = self.kwargs.get('category_slug')
+            self._category = get_object_or_404(
+                Category, slug=category_slug, is_published=True)
+        return self._category
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        category = self.kwargs.get('category_slug')
-        context['category'] = Category.objects.get(slug=category)
+        context['category'] = self._get_category()
         return context
 
     def get_queryset(self):
         now = timezone.now()
-        category = self.kwargs.get('category_slug')
-        get_object_or_404(Category, slug=category,
-                          is_published=True)
-        return Post.objects.filter(category__slug=category,
+        category = self._get_category()
+        return Post.objects.filter(category=category,
                                    is_published=True,
                                    pub_date__lte=now)
 
@@ -95,37 +114,29 @@ class PostDetailView(DetailView):
     model = Post
     template_name = 'blog/detail.html'
 
-    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
-        context = super().get_context_data(**kwargs)
-        context['form'] = CreateCommentForm()
-        context['comments'] = (
-            self.object.comments.select_related('author')
-        )
-        return context
-
-    def dispatch(self, request, *args, **kwargs):
-        response = super().dispatch(request, *args, **kwargs)
-
-        post = self.get_object()
-        category_status = post.category.is_published
+    def get_object(self, queryset=None):
+        # здесь объект, который должен быть отображен
+        obj = super().get_object(queryset=queryset)
 
         now = timezone.now()
-        pub_date = post.pub_date
 
-        # Проверяем, является ли пользователь
-        # автором поста или пост опубликован
-        if (not post.is_published
-            or not category_status
-                or pub_date > now) and post.author != request.user:
+        if (not obj.is_published
+            or not obj.category.is_published
+                or obj.pub_date > now) and obj.author != self.request.user:
             # Если пользователь не автор и пост не опубликован,
             # показываем 404 ошибку
-            raise Http404("Вы не можете просматривать этот пост")
+            raise Http404('Вы не можете просматривать этот пост')
 
-        # Возвращаем ответ от родительского метода
-        return response
+        return obj
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['form'] = CreateCommentForm()
+        context['comments'] = self.object.comments.select_related('author')
+        return context
 
 
-class PostUpdateView(UpdateView):
+'''class PostUpdateView(LoginRequiredMixin, UpdateView):
     model = Post
     form_class = CreatePostForm
     template_name = 'blog/create.html'
@@ -133,14 +144,41 @@ class PostUpdateView(UpdateView):
     def get_success_url(self):
         return reverse('blog:post_detail', kwargs={'pk': self.object.pk})
 
-    def dispatch(self, request, *args, **kwargs):
+    def get_object(self, queryset: QuerySet[Any] | None = ...) -> Model:
         post_id = self.kwargs.get('pk')
-        post = get_object_or_404(Post, pk=post_id)
+        return get_object_or_404(Post, pk=post_id)
 
-        if post.author.pk != request.user.pk:
-            return redirect('blog:post_detail', pk=post_id)
-
+    def dispatch(self, request, *args, **kwargs):
+        post = self.get_object()
+        if post.author != request.user:
+            return redirect('blog:post_detail', pk=post.pk)
         return super().dispatch(request, *args, **kwargs)
+'''
+
+
+class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Post
+    form_class = CreatePostForm
+    template_name = 'blog/create.html'
+
+    def get_success_url(self):
+        return reverse('blog:post_detail', kwargs={'pk': self.object.pk})
+
+    def get_object(self, queryset=None):
+        # Сохраняем объект для использования в других методах
+        if not hasattr(self, '_post'):
+            post_id = self.kwargs.get('pk')
+            self._post = get_object_or_404(Post, pk=post_id)
+        return self._post
+
+    def test_func(self):
+        post = self.get_object()
+        return post.author == self.request.user
+
+    def handle_no_permission(self):
+        post = self.get_object()
+        # Перенаправляем на страницу деталей поста, если пользователь не автор
+        return redirect('blog:post_detail', pk=post.pk)
 
 
 class PostDeleteView(DeleteView):
