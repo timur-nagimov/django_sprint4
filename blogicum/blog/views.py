@@ -16,17 +16,12 @@ from django.views.generic import (
 )
 
 from blogicum.forms import UserUpdateForm
-from .constants import MAIN_PAGE_MAX_POSTS
 from .models import Post, Category, Comment
 from .forms import CreatePostForm, CreateCommentForm
+from .mixins import PaginatorListMixin
 
 
 User = get_user_model()
-
-
-class PaginatorListMixin:
-    model = Post
-    paginate_by = MAIN_PAGE_MAX_POSTS
 
 
 class BlogListView(PaginatorListMixin, ListView):
@@ -49,7 +44,7 @@ class ProfileListView(PaginatorListMixin, ListView):
 
     def get_user(self) -> User:
         # Получаем username из URL или используем имя текущего пользователя
-        username = self.kwargs.get('username') or self.request.user.username
+        username = self.kwargs.get('username', self.request.user.username)
         return get_object_or_404(User, username=username)
 
     def get_queryset(self):
