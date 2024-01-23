@@ -22,6 +22,7 @@ from blogicum.forms import UserUpdateForm
 from .models import Post, Category, Comment
 from .forms import CreatePostForm, CreateCommentForm
 from .mixins import PaginatorListMixin
+from .constants import POST_ID_NAME, COMMENT_ID_NAME
 
 
 User = get_user_model()
@@ -136,26 +137,6 @@ class PostDetailView(DetailView):
         return context
 
 
-'''class PostUpdateView(LoginRequiredMixin, UpdateView):
-    model = Post
-    form_class = CreatePostForm
-    template_name = 'blog/create.html'
-
-    def get_success_url(self):
-        return reverse('blog:post_detail', kwargs={'pk': self.object.pk})
-
-    def get_object(self, queryset: QuerySet[Any] | None = ...) -> Model:
-        post_id = self.kwargs.get('pk')
-        return get_object_or_404(Post, pk=post_id)
-
-    def dispatch(self, request, *args, **kwargs):
-        post = self.get_object()
-        if post.author != request.user:
-            return redirect('blog:post_detail', pk=post.pk)
-        return super().dispatch(request, *args, **kwargs)
-'''
-
-
 class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Post
     form_class = CreatePostForm
@@ -165,7 +146,6 @@ class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
         return reverse('blog:post_detail', kwargs={'pk': self.object.pk})
 
     def get_object(self, queryset=None):
-        # Сохраняем объект для использования в других методах
         if not hasattr(self, '_post'):
             post_id = self.kwargs.get('pk')
             self._post = get_object_or_404(Post, pk=post_id)
@@ -181,20 +161,20 @@ class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
         return redirect('blog:post_detail', pk=post.pk)
 
 
-class PostDeleteView(DeleteView):
+class PostDeleteView(LoginRequiredMixin, DeleteView):
     model = Post
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
+    pk_url_kwarg = 'pk'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form'] = CreatePostForm(instance=self.object)
         return context
 
-    def get_object(self, queryset=None):
-        post_id = self.kwargs.get('pk')
-        user_id = self.request.user.pk
-        return get_object_or_404(Post, pk=post_id, author=user_id)
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(author=self.request.user)
 
 
 class UserUpdateView(LoginRequiredMixin, UpdateView):
@@ -207,41 +187,38 @@ class UserUpdateView(LoginRequiredMixin, UpdateView):
         return self.request.user
 
 
-class CommentUpdateView(UpdateView):
+class CommentUpdateView(LoginRequiredMixin, UpdateView):
     model = Comment
     form_class = CreateCommentForm
     template_name = 'blog/comment.html'
+    pk_url_kwarg = 'comment_id'
 
     def get_success_url(self):
-        post_id = self.kwargs['post_id']
-        return reverse_lazy('blog:post_detail', kwargs={'pk': post_id})
+        post_id = self.kwargs[POST_ID_NAME]
+        return reverse('blog:post_detail', kwargs={'pk': post_id})
 
-    def get_object(self, queryset=None):
-        comment_id = self.kwargs['comment_id']
-        user_id = self.request.user.pk
-
-        return get_object_or_404(Comment, pk=comment_id, author=user_id)
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(author=self.request.user)
 
 
-class CommentDeleteView(DeleteView):
+class CommentDeleteView(LoginRequiredMixin, DeleteView):
     model = Comment
     template_name = 'blog/comment.html'
+    pk_url_kwarg = 'comment_id'
 
     def get_success_url(self):
-        post_id = self.kwargs['post_id']
+        post_id = self.kwargs[POST_ID_NAME]
         return reverse_lazy('blog:post_detail', kwargs={'pk': post_id})
 
-    def get_object(self, queryset=None):
-        # Получаем ID комментария из аргументов URL
-        comment_id = self.kwargs['comment_id']
-        user_id = self.request.user.pk
-
-        return get_object_or_404(Comment, pk=comment_id, author=user_id)
+    def get_queryset(self):
+        qs = super().get_queryset()
+        return qs.filter(author=self.request.user)
 
 
 @login_required
 def add_comment(request, pk):
-    # Получаем объект дня рождения или выбрасываем 404 ошибку.
+    """Получаем объект дня рождения или выбрасываем 404 ошибку."""
     post = get_object_or_404(Post, pk=pk)
     form = CreateCommentForm(request.POST)
     if form.is_valid():
