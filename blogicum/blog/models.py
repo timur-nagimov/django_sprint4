@@ -3,6 +3,7 @@ from django.db import models
 from django.contrib.auth import get_user_model
 
 from core.models import BlogBaseModel
+from .querysets import PostQuerySet
 
 
 User = get_user_model()
@@ -34,6 +35,8 @@ class Post(BlogBaseModel):
         verbose_name='Категория',
         related_name='posts')
     image = models.ImageField('Фото', blank=True, upload_to='posts_images')
+
+    objects = PostQuerySet.as_manager()
 
     @property
     def comment_count(self):

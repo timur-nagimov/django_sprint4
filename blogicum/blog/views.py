@@ -1,13 +1,8 @@
-from typing import Any
-from django.db.models.base import Model as Model
-from django.db.models.query import QuerySet
-
 from django.http import Http404
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Q
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse, reverse_lazy
 from django.views.generic import (
@@ -22,7 +17,7 @@ from blogicum.forms import UserUpdateForm
 from .models import Post, Category, Comment
 from .forms import CreatePostForm, CreateCommentForm
 from .mixins import PaginatorListMixin
-from .constants import POST_ID_NAME, COMMENT_ID_NAME
+from .constants import POST_ID_NAME
 
 
 User = get_user_model()
@@ -57,15 +52,7 @@ class ProfileListView(PaginatorListMixin, ListView):
         current_user = self.request.user
         if url_user == current_user:
             return Post.objects.filter(author=url_user)
-        else:
-            now = timezone.now()
-            return Post.objects.filter(
-                (Q(author=url_user)
-                 & Q(is_published=True)
-                 & Q(category__is_published=True)
-                 & Q(pub_date__lte=now)
-                 )
-            )
+        return Post.objects.published_posts_by_author(url_user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -90,11 +77,8 @@ class CategoryListView(PaginatorListMixin, ListView):
         return context
 
     def get_queryset(self):
-        now = timezone.now()
         category = self._get_category()
-        return Post.objects.filter(category=category,
-                                   is_published=True,
-                                   pub_date__lte=now)
+        return Post.objects.in_category(category)
 
 
 class PostCreateView(LoginRequiredMixin, CreateView):
@@ -116,18 +100,13 @@ class PostDetailView(DetailView):
     template_name = 'blog/detail.html'
 
     def get_object(self, queryset=None):
-        # здесь объект, который должен быть отображен
+        if queryset is None:
+            queryset = Post.objects.available_for_user(self.request.user)
+
         obj = super().get_object(queryset=queryset)
 
-        now = timezone.now()
-
-        if (not obj.is_published
-            or not obj.category.is_published
-                or obj.pub_date > now) and obj.author != self.request.user:
-            # Если пользователь не автор и пост не опубликован,
-            # показываем 404 ошибку
+        if obj is None:
             raise Http404('Вы не можете просматривать этот пост')
-
         return obj
 
     def get_context_data(self, **kwargs):
@@ -218,14 +197,16 @@ class CommentDeleteView(LoginRequiredMixin, DeleteView):
 
 @login_required
 def add_comment(request, pk):
-    """Получаем объект дня рождения или выбрасываем 404 ошибку."""
-    post = get_object_or_404(Post, pk=pk)
+    user = request.user
+    post = get_object_or_404(Post.objects.available_for_user(user), pk=pk)
     form = CreateCommentForm(request.POST)
-    if form.is_valid():
-        comment = form.save(commit=False)
 
-        comment.author = request.user
-        comment.post = post
-        comment.save()
+    if not form.is_valid():
+        return redirect('blog:post_detail', pk=pk)
+
+    comment = form.save(commit=False)
+    comment.author = request.user
+    comment.post = post
+    comment.save()
 
     return redirect('blog:post_detail', pk=pk)
