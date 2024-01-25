@@ -12,7 +12,7 @@ class PostQuerySet(models.QuerySet):
                            category__is_published=True)
 
     def in_category(self, category):
-        return self.published().filter(category=category)
+        return category.posts.published()
 
     def available_for_user(self, user, queryset=None):
         if queryset is None:
