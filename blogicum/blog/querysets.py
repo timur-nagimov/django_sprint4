@@ -14,13 +14,16 @@ class PostQuerySet(models.QuerySet):
     def in_category(self, category):
         return self.published().filter(category=category)
 
-    def available_for_user(self, user):
+    def available_for_user(self, user, queryset=None):
+        if queryset is None:
+            queryset = self
+
         now = timezone.now()
         if user.is_authenticated:
-            return self.filter(
+            return queryset.filter(
                 Q(is_published=True,
                   category__is_published=True,
                   pub_date__lte=now)
                 | Q(author=user)
             )
-        return self.published()
+        return queryset.published()

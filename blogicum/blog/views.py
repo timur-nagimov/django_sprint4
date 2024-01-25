@@ -1,4 +1,3 @@
-from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -16,7 +15,11 @@ from blogicum.forms import UserUpdateForm
 from .models import Post, Category, Comment
 from .forms import CreatePostForm, CreateCommentForm
 from .mixins import PaginatorListMixin
-from .constants import POST_ID_NAME
+from .constants import (
+    POST_ID_NAME,
+    COMMENT_ID_NAME,
+    PK_NAME,
+)
 
 
 User = get_user_model()
@@ -97,13 +100,10 @@ class PostDetailView(DetailView):
     template_name = 'blog/detail.html'
 
     def get_object(self, queryset=None):
-        if queryset is None:
-            queryset = Post.objects.available_for_user(self.request.user)
+        posts_for_user = Post.objects.available_for_user(
+            self.request.user, queryset)
 
-        obj = super().get_object(queryset=queryset)
-
-        if obj is None:
-            raise Http404('Вы не можете просматривать этот пост')
+        obj = super().get_object(queryset=posts_for_user)
         return obj
 
     def get_context_data(self, **kwargs):
@@ -117,31 +117,24 @@ class PostUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
     model = Post
     form_class = CreatePostForm
     template_name = 'blog/create.html'
+    pk_url_kwarg = PK_NAME
 
     def get_success_url(self):
-        return reverse('blog:post_detail', kwargs={'pk': self.object.pk})
-
-    def get_object(self, queryset=None):
-        if not hasattr(self, '_post'):
-            post_id = self.kwargs.get('pk')
-            self._post = get_object_or_404(Post, pk=post_id)
-        return self._post
+        return reverse('blog:post_detail', kwargs={PK_NAME: self.object.pk})
 
     def test_func(self):
         post = self.get_object()
         return post.author == self.request.user
 
     def handle_no_permission(self):
-        post = self.get_object()
-        # Перенаправляем на страницу деталей поста, если пользователь не автор
-        return redirect('blog:post_detail', pk=post.pk)
+        return redirect('blog:post_detail', pk=self.kwargs.get(PK_NAME))
 
 
 class PostDeleteView(LoginRequiredMixin, DeleteView):
     model = Post
     template_name = 'blog/create.html'
     success_url = reverse_lazy('blog:index')
-    pk_url_kwarg = 'pk'
+    pk_url_kwarg = PK_NAME
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -167,11 +160,11 @@ class CommentUpdateView(LoginRequiredMixin, UpdateView):
     model = Comment
     form_class = CreateCommentForm
     template_name = 'blog/comment.html'
-    pk_url_kwarg = 'comment_id'
+    pk_url_kwarg = COMMENT_ID_NAME
 
     def get_success_url(self):
         post_id = self.kwargs[POST_ID_NAME]
-        return reverse('blog:post_detail', kwargs={'pk': post_id})
+        return reverse('blog:post_detail', kwargs={PK_NAME: post_id})
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -181,11 +174,11 @@ class CommentUpdateView(LoginRequiredMixin, UpdateView):
 class CommentDeleteView(LoginRequiredMixin, DeleteView):
     model = Comment
     template_name = 'blog/comment.html'
-    pk_url_kwarg = 'comment_id'
+    pk_url_kwarg = COMMENT_ID_NAME
 
     def get_success_url(self):
         post_id = self.kwargs[POST_ID_NAME]
-        return reverse_lazy('blog:post_detail', kwargs={'pk': post_id})
+        return reverse('blog:post_detail', kwargs={PK_NAME: post_id})
 
     def get_queryset(self):
         qs = super().get_queryset()
