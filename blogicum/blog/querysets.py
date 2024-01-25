@@ -24,6 +24,3 @@ class PostQuerySet(models.QuerySet):
                 | Q(author=user)
             )
         return self.published()
-
-    def published_posts_by_author(self, author):
-        return self.published().filter(author=author)

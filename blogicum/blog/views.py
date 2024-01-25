@@ -43,9 +43,11 @@ class ProfileListView(PaginatorListMixin, ListView):
     def get_queryset(self):
         url_user = self._get_user()
         current_user = self.request.user
-        if url_user == current_user:
-            return Post.objects.filter(author=url_user)
-        return Post.objects.published_posts_by_author(url_user)
+
+        posts = url_user.posts_author.all()
+        if url_user != current_user:
+            posts = posts.published()
+        return posts
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -58,10 +60,12 @@ class CategoryListView(PaginatorListMixin, ListView):
     template_name = 'blog/category.html'
 
     def _get_category(self):
-        if not hasattr(self, '_category'):
-            category_slug = self.kwargs.get('category_slug')
-            self._category = get_object_or_404(
-                Category, slug=category_slug, is_published=True)
+        if hasattr(self, '_category'):
+            return self._category
+
+        category_slug = self.kwargs.get('category_slug')
+        self._category = get_object_or_404(
+            Category, slug=category_slug, is_published=True)
         return self._category
 
     def get_context_data(self, **kwargs):
