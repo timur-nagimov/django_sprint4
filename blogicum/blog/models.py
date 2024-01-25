@@ -21,7 +21,8 @@ class Post(BlogBaseModel):
     author = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        verbose_name='Автор публикации')
+        verbose_name='Автор публикации',
+        related_name='posts_author')
     location = models.ForeignKey(
         'Location',
         on_delete=models.SET_NULL,

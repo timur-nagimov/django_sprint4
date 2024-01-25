@@ -4,6 +4,7 @@ from django.db.models import Q
 
 
 class PostQuerySet(models.QuerySet):
+
     def published(self):
         now = timezone.now()
         return self.filter(is_published=True,
@@ -22,8 +23,7 @@ class PostQuerySet(models.QuerySet):
                   pub_date__lte=now)
                 | Q(author=user)
             )
-        else:
-            return self.published()
+        return self.published()
 
     def published_posts_by_author(self, author):
         return self.published().filter(author=author)
