@@ -1,5 +1,4 @@
 from django.http import Http404
-from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -28,13 +27,7 @@ class BlogListView(PaginatorListMixin, ListView):
     template_name = 'blog/index.html'
 
     def get_queryset(self):
-        now = timezone.now()
-        # Фильтруем записи:
-        # опубликованные и с датой публикации не позднее текущего времени
-        return Post.objects.filter(is_published=True,
-                                   pub_date__lte=now,
-                                   category__is_published=True
-                                   )
+        return Post.objects.published()
 
 
 class ProfileListView(PaginatorListMixin, ListView):
